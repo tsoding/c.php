@@ -1,21 +1,17 @@
-<?php
+<?php declare(strict_types=1);
 
-function todo($message) {
+function todo(string $message) : void {
     throw new ErrorException("TODO: " . $message);
 }
 
 class Loc {
-    public $file_path;
-    public $row;
-    public $col;
+    public function __construct(
+		public string $file_path,
+		public int    $row,
+		public int    $col
+	) {}
 
-    public function __construct($file_path, $row, $col) {
-        $this->file_path = $file_path;
-        $this->row = $row;
-        $this->col = $col;
-    }
-
-    public function display() {
+    public function display() : string {
         return sprintf("%s:%d:%d", $this->file_path, $this->row + 1, $this->col + 1);
     }
 }
@@ -33,41 +29,36 @@ define("TOKEN_STRING", "TOKEN_STRING");
 define("TOKEN_RETURN", "TOKEN_RETURN");
 
 class Token {
-    public $type;
-    public $value;
-    public $loc;
-
-    public function __construct($loc, $type, $value) {
-        $this->loc = $loc;
-        $this->type = $type;
-        $this->value = $value;
-    }
+    public function __construct(
+		public Loc    $loc,
+		public $type,
+		public int|string $value
+	) {}
 }
 
 class Lexer {
-    public $file_path;
-    public $source;
-    public $cur;
-    public $bol;
-    public $row;
+    public int $cur;
+    public int $bol;
+    public int $row;
 
-    public function __construct($file_path, $source) {
-        $this->file_path = $file_path;
-        $this->source = $source;
+    public function __construct(
+			public string $file_path,
+			public string $source
+		) {
         $this->cur = 0;
         $this->bol = 0;
         $this->row = 0;
     }
 
-    function is_not_empty() {
+    public function is_not_empty() : bool {
         return $this->cur < strlen($this->source);
     }
 
-    function is_empty() {
+    public function is_empty() : bool {
         return !$this->is_not_empty();
     }
 
-    function chop_char() {
+    public function chop_char() : void {
         if ($this->is_not_empty()) {
             $x = $this->source[$this->cur];
             $this->cur += 1;
@@ -78,17 +69,17 @@ class Lexer {
         }
     }
 
-    function loc() {
+    public function loc() : Loc {
         return new Loc($this->file_path, $this->row, $this->cur - $this->bol);
     }
 
-    function trim_left() {
+    public function trim_left() : void {
         while ($this->is_not_empty() && ctype_space($this->source[$this->cur])) {
             $this->chop_char();
         }
     }
 
-    function drop_line() {
+    public function drop_line() : void {
         while ($this->is_not_empty() && $this->source[$this->cur] !== "\n") {
             $this->chop_char();
         }
@@ -97,7 +88,7 @@ class Lexer {
         }
     }
 
-    function next_token() {
+    public function next_token() : ?Token {
         $this->trim_left();
         while ($this->is_not_empty() && $this->source[$this->cur] === "#") {
             $this->drop_line();
@@ -105,10 +96,10 @@ class Lexer {
         }
 
         if ($this->is_empty()) {
-            return false;
+            return null;
         }
 
-        $loc = $this->loc();
+        $loc   = $this->loc();
         $first = $this->source[$this->cur];
 
         if (ctype_alpha($first)) {
@@ -121,13 +112,14 @@ class Lexer {
             return new Token($loc, TOKEN_NAME, $value);
         }
 
-        $literal_tokens = array(
+        $literal_tokens = [
             "(" => TOKEN_OPAREN,
             ")" => TOKEN_CPAREN,
             "{" => TOKEN_OCURLY,
             "}" => TOKEN_CCURLY,
             ";" => TOKEN_SEMICOLON,
-        );
+		];
+
         if (isset($literal_tokens[$first])) {
             $this->chop_char();
             return new Token($loc, $literal_tokens[$first], $first);
@@ -147,7 +139,7 @@ class Lexer {
             }
 
             echo sprintf("%s: ERROR: unclosed string literal\n", $loc->display());
-            return false;
+            return null;
         }
 
         if (ctype_digit($first)) {
@@ -167,42 +159,36 @@ class Lexer {
 define("TYPE_INT", "TYPE_INT");
 
 class FuncallStmt {
-    public $name;
-    public $args;
-
-    public function __construct($name, $args) {
-        $this->name = $name;
-        $this->args = $args;
-    }
+    public function __construct(
+		public Token $name,
+		public array $args
+	) {}
 }
 
 class RetStmt {
-    public $expr;
 
-    public function __construct($expr) {
-        $this->expr = $expr;
-    }
+    public function __construct(
+    	public int $expr
+	) {}
 }
 
 class Func {
-    public $name;
-    public $body;
-
-    public function __construct($name, $body) {
-        $this->name = $name;
-        $this->body = $body;
-    }
+    public function __construct(
+		public $name,
+		public $body
+	) {}
 }
 
-function expect_token($lexer, ...$types) {
+function expect_token(Lexer $lexer, ...$types) : ?Token {
     $token = $lexer->next_token();
+
     if (!$token) {
         echo sprintf("%s: ERROR: expected %s but got end of file\n", 
             $lexer->loc()->display(), $type);
-        return false;
+        return null;
     }
 
-    foreach($types as &$type) {
+    foreach($types as $type) {
         if ($token->type === $type) {
             return $token;
         }
@@ -211,11 +197,13 @@ function expect_token($lexer, ...$types) {
     echo sprintf("%s: ERROR: expected %s but got %s\n", 
         $lexer->loc()->display(),
         join(" or ", $types),
-        $token->type);
-    return false;
+        $token->type
+	);
+ 
+	return null;
 }
 
-function parse_type($lexer) {
+function parse_type(Lexer $lexer) : ?string {
     $return_type = expect_token($lexer, TOKEN_NAME);
     if ($return_type->value !== "int") {
         echo sprintf("%s: ERROR: unexpected type %s", 
@@ -226,9 +214,9 @@ function parse_type($lexer) {
     return TYPE_INT;
 }
 
-function parse_arglist($lexer) {
+function parse_arglist(Lexer $lexer) : array {
     if (!expect_token($lexer, TOKEN_OPAREN)) return false;
-    $arglist = array();
+    $arglist = [];
     while (true) {
         $expr = expect_token($lexer, TOKEN_STRING, TOKEN_NUMBER, TOKEN_CPAREN);
         if (!$expr) return false;
@@ -238,39 +226,39 @@ function parse_arglist($lexer) {
     return $arglist;
 }
 
-function parse_block($lexer) {
-    if (!expect_token($lexer, TOKEN_OCURLY)) return false;
+function parse_block(Lexer $lexer) : ?array {
+    if (!expect_token($lexer, TOKEN_OCURLY)) return null;
 
-    $block = array();
+    $block = [];
 
     while (true) {
         $name = expect_token($lexer, TOKEN_NAME, TOKEN_CCURLY);
-        if (!$name) return false;
+        if (!$name) return null;
         if ($name->type == TOKEN_CCURLY) break;
 
         if ($name->value == "return") {
             $expr = expect_token($lexer, TOKEN_NUMBER, TOKEN_STRING);
-            if (!$expr) return false;
+            if (!$expr) return null;
             array_push($block, new RetStmt($expr->value));
         } else {
             $arglist = parse_arglist($lexer);
-            if (!$arglist) return false;
+            if (!$arglist) return null;
             array_push($block, new FuncallStmt($name, $arglist));
         }
 
-        if (!expect_token($lexer, TOKEN_SEMICOLON)) return false;
+        if (!expect_token($lexer, TOKEN_SEMICOLON)) return null;
     }
 
     return $block;
 }
 
-function parse_function($lexer) {
+function parse_function(Lexer $lexer) : ?Func {
     $return_type = parse_type($lexer);
-    if (!$return_type) return false;
+    if (!$return_type) return null;
     assert($return_type === TYPE_INT);
 
     $name = expect_token($lexer, TOKEN_NAME);
-    if (!$name) return false;
+    if (!$name) return null;
 
     if (!expect_token($lexer, TOKEN_OPAREN)) return false;
     if (!expect_token($lexer, TOKEN_CPAREN)) return false;
@@ -286,13 +274,15 @@ if ($argc < 2) {
 }
 
 $file_path = $argv[1];
-$source = file_get_contents($file_path);
+$source    = file_get_contents($file_path);
+
 if (!$source) exit(69);
+
 $lexer = new Lexer($file_path, $source);
-$func = parse_function($lexer);
+$func  = parse_function($lexer);
 if (!$func) exit(69);
 
-foreach($func->body as &$stmt) {
+foreach($func->body as $stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
             echo sprintf("print(\"%s\")\n", join(", ", $stmt->args));
