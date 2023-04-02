@@ -295,7 +295,7 @@ if (!$func) exit(69);
 foreach($func->body as &$stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
-            echo sprintf("print(\"%s\")\n", join(", ", $stmt->args));
+            echo sprintf("print(\"%s\", end=\"\")\n", join(", ", $stmt->args));
         } else {
             echo sprintf("%s: ERROR: unknown function %s\n", 
                 $stmt->name->loc->display(),
