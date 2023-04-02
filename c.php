@@ -321,9 +321,15 @@ foreach($func->body as &$stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
             $format = $stmt->args[0];
-            $substitutions = "";
             if (count($stmt->args) <= 1) {
-                // Optimization: Don't invoke Python's % operator if it's unnecessary.
+                if (str_ends_with($format, "\\n")) {
+                    // Optimization: print("x") is faster than print("x\n", end="").
+                    $format_without_newline = substr($format, 0, strlen($format) - 2);
+                    echo sprintf("print(%s)\n", literal_to_py($format_without_newline));
+                } else {
+                    // Optimization: Don't invoke Python's % operator if it's unnecessary.
+                    echo sprintf("print(%s, end=\"\")\n", literal_to_py($format));
+                }
             } else {
                 $substitutions = " % (";
                 foreach ($stmt->args as $i => $arg) {
@@ -331,8 +337,8 @@ foreach($func->body as &$stmt) {
                     $substitutions .= literal_to_py($arg) . ",";
                 }
                 $substitutions .= ")";
+                echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
             }
-            echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
         } else {
             echo sprintf("%s: ERROR: unknown function %s\n", 
                 $stmt->name->loc->display(),
