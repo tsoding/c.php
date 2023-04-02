@@ -72,7 +72,7 @@ class Lexer {
         }
     }
 
-    public function loc() : Loc {
+    public function loc() : ?Loc {
         return new Loc($this->file_path, $this->row, $this->cur - $this->bol);
     }
 
@@ -184,7 +184,7 @@ class Func {
 	) {}
 }
 
-function expect_token(Lexer $lexer, ...$types) : ?Token {
+function expect_token(Lexer $lexer, TokenType ...$types) : ?Token {
     $token = $lexer->next_token();
 
     if (!$token) {
@@ -214,17 +214,17 @@ function parse_type(Lexer $lexer) : ?Type {
         echo sprintf("%s: ERROR: unexpected type %s", 
             $return_type->loc->display(),
             $return_type->value);
-        return false;
+        return null;
     }
     return Type::INT;
 }
 
-function parse_arglist(Lexer $lexer) : array {
-    if (!expect_token($lexer, TokenType::OPAREN)) return false;
+function parse_arglist(Lexer $lexer) : ?array {
+    if (!expect_token($lexer, TokenType::OPAREN)) return null;
     $arglist = [];
     while (true) {
         $expr = expect_token($lexer, TokenType::STRING, TokenType::NUMBER, TokenType::CPAREN);
-        if (!$expr) return false;
+        if (!$expr) return null;
         if ($expr->type == TokenType::CPAREN) break;
         array_push($arglist, $expr->value);
     }
