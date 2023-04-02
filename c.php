@@ -18,20 +18,23 @@ class Loc {
 
 // #include <stdio.h>\nint main(void) {\n...
 //                     ^      ^
-define("TOKEN_NAME", "TOKEN_NAME");
-define("TOKEN_OPAREN", "TOKEN_OPAREN");
-define("TOKEN_CPAREN", "TOKEN_CPAREN");
-define("TOKEN_OCURLY", "TOKEN_OCURLY");
-define("TOKEN_CCURLY", "TOKEN_CCURLY");
-define("TOKEN_SEMICOLON", "TOKEN_SEMICOLON");
-define("TOKEN_NUMBER", "TOKEN_NUMBER");
-define("TOKEN_STRING", "TOKEN_STRING");
-define("TOKEN_RETURN", "TOKEN_RETURN");
+
+enum TokenType {
+	case NAME;
+	case OPAREN;
+	case CPAREN;
+	case OCURLY;
+	case CCURLY;
+	case SEMICOLON;
+	case NUMBER;
+	case STRING;
+	case RETURN;
+}
 
 class Token {
     public function __construct(
-		public Loc    $loc,
-		public $type,
+		public Loc        $loc,
+		public TokenType  $type,
 		public int|string $value
 	) {}
 }
@@ -109,15 +112,15 @@ class Lexer {
             }
 
             $value = substr($this->source, $index, $this->cur - $index);
-            return new Token($loc, TOKEN_NAME, $value);
+            return new Token($loc, TokenType::NAME, $value);
         }
 
         $literal_tokens = [
-            "(" => TOKEN_OPAREN,
-            ")" => TOKEN_CPAREN,
-            "{" => TOKEN_OCURLY,
-            "}" => TOKEN_CCURLY,
-            ";" => TOKEN_SEMICOLON,
+            "(" => TokenType::OPAREN,
+            ")" => TokenType::CPAREN,
+            "{" => TokenType::OCURLY,
+            "}" => TokenType::CCURLY,
+            ";" => TokenType::SEMICOLON,
 		];
 
         if (isset($literal_tokens[$first])) {
@@ -135,7 +138,7 @@ class Lexer {
             if ($this->is_not_empty()) {
                 $value = substr($this->source, $start, $this->cur - $start);
                 $this->chop_char();
-                return new Token($loc, TOKEN_STRING, $value);
+                return new Token($loc, TokenType::STRING, $value);
             }
 
             echo sprintf("%s: ERROR: unclosed string literal\n", $loc->display());
@@ -149,14 +152,16 @@ class Lexer {
             }
 
             $value = (int)substr($this->source, $start, $this->cur - $start);
-            return new Token($loc, TOKEN_NUMBER, $value);
+            return new Token($loc, TokenType::NUMBER, $value);
         }
 
         todo("next_token");
     }
 }
 
-define("TYPE_INT", "TYPE_INT");
+enum Type {
+	case INT;
+}
 
 class FuncallStmt {
     public function __construct(
@@ -203,41 +208,41 @@ function expect_token(Lexer $lexer, ...$types) : ?Token {
 	return null;
 }
 
-function parse_type(Lexer $lexer) : ?string {
-    $return_type = expect_token($lexer, TOKEN_NAME);
+function parse_type(Lexer $lexer) : ?Type {
+    $return_type = expect_token($lexer, TokenType::NAME);
     if ($return_type->value !== "int") {
         echo sprintf("%s: ERROR: unexpected type %s", 
             $return_type->loc->display(),
             $return_type->value);
         return false;
     }
-    return TYPE_INT;
+    return Type::INT;
 }
 
 function parse_arglist(Lexer $lexer) : array {
-    if (!expect_token($lexer, TOKEN_OPAREN)) return false;
+    if (!expect_token($lexer, TokenType::OPAREN)) return false;
     $arglist = [];
     while (true) {
-        $expr = expect_token($lexer, TOKEN_STRING, TOKEN_NUMBER, TOKEN_CPAREN);
+        $expr = expect_token($lexer, TokenType::STRING, TokenType::NUMBER, TokenType::CPAREN);
         if (!$expr) return false;
-        if ($expr->type == TOKEN_CPAREN) break;
+        if ($expr->type == TokenType::CPAREN) break;
         array_push($arglist, $expr->value);
     }
     return $arglist;
 }
 
 function parse_block(Lexer $lexer) : ?array {
-    if (!expect_token($lexer, TOKEN_OCURLY)) return null;
+    if (!expect_token($lexer, TokenType::OCURLY)) return null;
 
     $block = [];
 
     while (true) {
-        $name = expect_token($lexer, TOKEN_NAME, TOKEN_CCURLY);
+        $name = expect_token($lexer, TokenType::NAME, TokenType::CCURLY);
         if (!$name) return null;
-        if ($name->type == TOKEN_CCURLY) break;
+        if ($name->type == TokenType::CCURLY) break;
 
         if ($name->value == "return") {
-            $expr = expect_token($lexer, TOKEN_NUMBER, TOKEN_STRING);
+            $expr = expect_token($lexer, TokenType::NUMBER, TokenType::STRING);
             if (!$expr) return null;
             array_push($block, new RetStmt($expr->value));
         } else {
@@ -246,7 +251,7 @@ function parse_block(Lexer $lexer) : ?array {
             array_push($block, new FuncallStmt($name, $arglist));
         }
 
-        if (!expect_token($lexer, TOKEN_SEMICOLON)) return null;
+        if (!expect_token($lexer, TokenType::SEMICOLON)) return null;
     }
 
     return $block;
@@ -255,13 +260,13 @@ function parse_block(Lexer $lexer) : ?array {
 function parse_function(Lexer $lexer) : ?Func {
     $return_type = parse_type($lexer);
     if (!$return_type) return null;
-    assert($return_type === TYPE_INT);
+    assert($return_type === Type::INT);
 
-    $name = expect_token($lexer, TOKEN_NAME);
+    $name = expect_token($lexer, TokenType::NAME);
     if (!$name) return null;
 
-    if (!expect_token($lexer, TOKEN_OPAREN)) return false;
-    if (!expect_token($lexer, TOKEN_CPAREN)) return false;
+    if (!expect_token($lexer, TokenType::OPAREN)) return false;
+    if (!expect_token($lexer, TokenType::CPAREN)) return false;
 
     $body = parse_block($lexer);
 
