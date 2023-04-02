@@ -309,6 +309,14 @@ $lexer = new Lexer($file_path, $source);
 $func = parse_function($lexer);
 if (!$func) exit(69);
 
+function literal_to_py($value) {
+    if (is_string($value)) {
+        return "\"" . $value . "\"";
+    } else {
+        return (string)$value;
+    }
+}
+
 foreach($func->body as &$stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
@@ -320,15 +328,11 @@ foreach($func->body as &$stmt) {
                 $substitutions = " % (";
                 foreach ($stmt->args as $i => $arg) {
                     if ($i === 0) continue;  // Skip format string.
-                    if (is_string($arg)) {
-                        $substitutions .= "\"" . $arg . "\",";
-                    } else {
-                        $substitutions .= $arg . ",";
-                    }
+                    $substitutions .= literal_to_py($arg) . ",";
                 }
                 $substitutions .= ")";
             }
-            echo sprintf("print(\"%s\"%s, end=\"\")\n", $format, $substitutions);
+            echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
         } else {
             echo sprintf("%s: ERROR: unknown function %s\n", 
                 $stmt->name->loc->display(),
