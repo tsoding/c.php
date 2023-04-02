@@ -4,6 +4,15 @@ function todo($message) {
     throw new ErrorException("TODO: " . $message);
 }
 
+function php7_str_ends_with($haystack, $needle)
+{
+    $count = strlen($needle);
+    if ($count === 0) {
+        return true;
+    }
+    return substr($haystack, -$count) === $needle;
+}
+
 class Loc {
     public $file_path;
     public $row;
@@ -322,7 +331,7 @@ foreach($func->body as &$stmt) {
         if ($stmt->name->value === "printf") {
             $format = $stmt->args[0];
             if (count($stmt->args) <= 1) {
-                if (str_ends_with($format, "\\n")) {
+                if (php7_str_ends_with($format, "\\n")) {
                     // Optimization: print("x") is faster than print("x\n", end="").
                     $format_without_newline = substr($format, 0, strlen($format) - 2);
                     echo sprintf("print(%s)\n", literal_to_py($format_without_newline));
