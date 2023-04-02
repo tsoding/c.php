@@ -4,6 +4,15 @@ function todo(string $message) : void {
     throw new ErrorException("TODO: " . $message);
 }
 
+function php7_str_ends_with($haystack, $needle)
+{
+    $count = strlen($needle);
+    if ($count === 0) {
+        return true;
+    }
+    return substr($haystack, -$count) === $needle;
+}
+
 class Loc {
     public function __construct(
 		public string $file_path,
@@ -25,6 +34,7 @@ enum TokenType {
 	case CPAREN;
 	case OCURLY;
 	case CCURLY;
+	case COMMA;
 	case SEMICOLON;
 	case NUMBER;
 	case STRING;
@@ -120,6 +130,7 @@ class Lexer {
             ")" => TokenType::CPAREN,
             "{" => TokenType::OCURLY,
             "}" => TokenType::CCURLY,
+			"," => TokenType::COMMA,
             ";" => TokenType::SEMICOLON,
 		];
 
@@ -222,12 +233,27 @@ function parse_type(Lexer $lexer) : ?Type {
 function parse_arglist(Lexer $lexer) : ?array {
     if (!expect_token($lexer, TokenType::OPAREN)) return null;
     $arglist = [];
+
+    // First argument (optional).
+    $expr = expect_token($lexer, TokenType::STRING, TokenType::NUMBER, TokenType::CPAREN);
+    if (!$expr) return null;
+    if ($expr->type == TokenType::CPAREN) {
+        // Call with no arguments.
+        return $arglist;
+    }
+    array_push($arglist, $expr->value);
+
+    // Second, third, etc. arguments (optional).
     while (true) {
-        $expr = expect_token($lexer, TokenType::STRING, TokenType::NUMBER, TokenType::CPAREN);
+        $expr = expect_token($lexer, TokenType::CPAREN, TokenType::COMMA);
         if (!$expr) return null;
         if ($expr->type == TokenType::CPAREN) break;
+
+        $expr = expect_token($lexer, TokenType::STRING, TokenType::NUMBER);
+        if (!$expr) return null;
         array_push($arglist, $expr->value);
     }
+
     return $arglist;
 }
 
@@ -287,10 +313,36 @@ $lexer = new Lexer($file_path, $source);
 $func  = parse_function($lexer);
 if (!$func) exit(69);
 
+function literal_to_py(string|int $value) : string {
+    if (is_string($value)) {
+        return "\"" . $value . "\"";
+    } else {
+        return (string)$value;
+    }
+}
+
 foreach($func->body as $stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
-            echo sprintf("print(\"%s\")\n", join(", ", $stmt->args));
+            $format = $stmt->args[0];
+            if (count($stmt->args) <= 1) {
+                if (php7_str_ends_with($format, "\\n")) {
+                    // Optimization: print("x") is faster than print("x\n", end="").
+                    $format_without_newline = substr($format, 0, strlen($format) - 2);
+                    echo sprintf("print(%s)\n", literal_to_py($format_without_newline));
+                } else {
+                    // Optimization: Don't invoke Python's % operator if it's unnecessary.
+                    echo sprintf("print(%s, end=\"\")\n", literal_to_py($format));
+                }
+            } else {
+                $substitutions = " % (";
+                foreach ($stmt->args as $i => $arg) {
+                    if ($i === 0) continue;  // Skip format string.
+                    $substitutions .= literal_to_py($arg) . ",";
+                }
+                $substitutions .= ")";
+                echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
+            }
         } else {
             echo sprintf("%s: ERROR: unknown function %s\n", 
                 $stmt->name->loc->display(),
