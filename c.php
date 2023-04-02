@@ -27,6 +27,7 @@ define("TOKEN_OPAREN", "TOKEN_OPAREN");
 define("TOKEN_CPAREN", "TOKEN_CPAREN");
 define("TOKEN_OCURLY", "TOKEN_OCURLY");
 define("TOKEN_CCURLY", "TOKEN_CCURLY");
+define("TOKEN_COMMA", "TOKEN_COMMA");
 define("TOKEN_SEMICOLON", "TOKEN_SEMICOLON");
 define("TOKEN_NUMBER", "TOKEN_NUMBER");
 define("TOKEN_STRING", "TOKEN_STRING");
@@ -126,6 +127,7 @@ class Lexer {
             ")" => TOKEN_CPAREN,
             "{" => TOKEN_OCURLY,
             "}" => TOKEN_CCURLY,
+            "," => TOKEN_COMMA,
             ";" => TOKEN_SEMICOLON,
         );
         if (isset($literal_tokens[$first])) {
@@ -229,12 +231,27 @@ function parse_type($lexer) {
 function parse_arglist($lexer) {
     if (!expect_token($lexer, TOKEN_OPAREN)) return false;
     $arglist = array();
+
+    // First argument (optional).
+    $expr = expect_token($lexer, TOKEN_STRING, TOKEN_NUMBER, TOKEN_CPAREN);
+    if (!$expr) return false;
+    if ($expr->type == TOKEN_CPAREN) {
+        // Call with no arguments.
+        return $arglist;
+    }
+    array_push($arglist, $expr->value);
+
+    // Second, third, etc. arguments (optional).
     while (true) {
-        $expr = expect_token($lexer, TOKEN_STRING, TOKEN_NUMBER, TOKEN_CPAREN);
+        $expr = expect_token($lexer, TOKEN_CPAREN, TOKEN_COMMA);
         if (!$expr) return false;
         if ($expr->type == TOKEN_CPAREN) break;
+
+        $expr = expect_token($lexer, TOKEN_STRING, TOKEN_NUMBER);
+        if (!$expr) return false;
         array_push($arglist, $expr->value);
     }
+
     return $arglist;
 }
 
@@ -295,7 +312,23 @@ if (!$func) exit(69);
 foreach($func->body as &$stmt) {
     if ($stmt instanceof FuncallStmt) {
         if ($stmt->name->value === "printf") {
-            echo sprintf("print(\"%s\", end=\"\")\n", join(", ", $stmt->args));
+            $format = $stmt->args[0];
+            $substitutions = "";
+            if (count($stmt->args) <= 1) {
+                // Optimization: Don't invoke Python's % operator if it's unnecessary.
+            } else {
+                $substitutions = " % (";
+                foreach ($stmt->args as $i => $arg) {
+                    if ($i === 0) continue;  // Skip format string.
+                    if (is_string($arg)) {
+                        $substitutions .= "\"" . $arg . "\",";
+                    } else {
+                        $substitutions .= $arg . ",";
+                    }
+                }
+                $substitutions .= ")";
+            }
+            echo sprintf("print(\"%s\"%s, end=\"\")\n", $format, $substitutions);
         } else {
             echo sprintf("%s: ERROR: unknown function %s\n", 
                 $stmt->name->loc->display(),
