@@ -1,4 +1,4 @@
-![thumbnail](./thumbnail.png)
+![thumbnail](./assets/thumbnail.png)
 
 # Optimizing C to Python compiler in PHP
 
@@ -10,3 +10,7 @@ This is an April Fools joke. Please don't take it seriously. It only supports a 
 $ php c.php hello.c > hello.py
 $ python ./hello.py
 ```
+
+## Screencast
+
+[![screencast](./assets/screencast.png)](https://www.youtube.com/watch?v=Yi6NxMxCFY8)
