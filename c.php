@@ -4,6 +4,11 @@ function todo($message) {
     throw new ErrorException("TODO: " . $message);
 }
 
+function php7_str_starts_with($haystack, $needle) 
+{
+    return strpos($haystack, $needle) === 0;
+}
+
 function php7_str_ends_with($haystack, $needle)
 {
     $count = strlen($needle);
@@ -109,7 +114,9 @@ class Lexer {
 
     function next_token() {
         $this->trim_left();
-        while ($this->is_not_empty() && $this->source[$this->cur] === "#") {
+        while ($this->is_not_empty()) {
+            $s = substr($this->source, $this->cur);
+            if (!php7_str_starts_with($s, "#") && !php7_str_starts_with($s, "//")) break;
             $this->drop_line();
             $this->trim_left();
         }
@@ -147,18 +154,49 @@ class Lexer {
         if ($first === '"') {
             $this->chop_char();
             $start = $this->cur;
-            while ($this->is_not_empty() && $this->source[$this->cur] !== '"') {
-                $this->chop_char();
+            $literal = "";
+            while ($this->is_not_empty()) {
+                $ch = $this->source[$this->cur];
+                switch ($ch) {
+                case '"': break 2;
+                case '\\': {
+                    $this->chop_char();
+                    if ($this->is_empty()) {
+                        print("{$lexer->loc()}: ERROR: unfinished escape sequence\n");
+                        exit(69);
+                    }
+
+                    $escape = $this->source[$this->cur];
+                    switch ($escape) {
+                    case 'n':
+                        $literal .= "\n";
+                        $this->chop_char();
+                        break;
+
+                    case '"':
+                        $literal .= "\"";
+                        $this->chop_char();
+                        break;
+
+                    default:
+                        print("{$this->loc()}: ERROR: unknown escape sequence starts with {$escape}\n");
+                    }
+
+                } break;
+
+                default: 
+                    $literal .= $ch;
+                    $this->chop_char();
+                }
             }
 
             if ($this->is_not_empty()) {
-                $value = substr($this->source, $start, $this->cur - $start);
                 $this->chop_char();
-                return new Token($loc, TOKEN_STRING, $value);
+                return new Token($loc, TOKEN_STRING, $literal);
             }
 
             echo sprintf("%s: ERROR: unclosed string literal\n", $loc->display());
-            return false;
+            exit(69);
         }
 
         if (ctype_digit($first)) {
@@ -171,7 +209,8 @@ class Lexer {
             return new Token($loc, TOKEN_NUMBER, $value);
         }
 
-        todo("next_token");
+        print("{$loc->display()}: ERROR: unknown token starts with {$first}\n");
+        exit(69);
     }
 }
 
@@ -209,7 +248,7 @@ function expect_token($lexer, ...$types) {
     $token = $lexer->next_token();
     if (!$token) {
         echo sprintf("%s: ERROR: expected %s but got end of file\n", 
-            $lexer->loc()->display(), $type);
+            $lexer->loc()->display(), join(" or ", $types));
         return false;
     }
 
@@ -306,53 +345,169 @@ function parse_function($lexer) {
     return new Func($name, $body);
 }
 
-if ($argc < 2) {
+function generate_python3($func) {
+    function literal_to_py($value) {
+        if (is_string($value)) {
+            return "\"" . $value . "\"";
+        } else {
+            return (string)$value;
+        }
+    }
+
+    foreach($func->body as &$stmt) {
+        if ($stmt instanceof FuncallStmt) {
+            if ($stmt->name->value === "printf") {
+                $format = $stmt->args[0];
+                if (count($stmt->args) <= 1) {
+                    if (php7_str_ends_with($format, "\\n")) {
+                        // Optimization: print("x") is faster than print("x\n", end="").
+                        $format_without_newline = substr($format, 0, strlen($format) - 2);
+                        echo sprintf("print(%s)\n", literal_to_py($format_without_newline));
+                    } else {
+                        // Optimization: Don't invoke Python's % operator if it's unnecessary.
+                        echo sprintf("print(%s, end=\"\")\n", literal_to_py($format));
+                    }
+                } else {
+                    $substitutions = " % (";
+                    foreach ($stmt->args as $i => $arg) {
+                        if ($i === 0) continue;  // Skip format string.
+                        $substitutions .= literal_to_py($arg) . ",";
+                    }
+                    $substitutions .= ")";
+                    echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
+                }
+            } else {
+                echo sprintf("%s: ERROR: unknown function %s\n", 
+                    $stmt->name->loc->display(),
+                    $stmt->name->value);
+                exit(69);
+            }
+        }
+    }
+}
+
+function generate_fasm_x86_64_linux($func) {
+    print("format ELF64 executable 3\n");
+    print("segment readable executable\n");
+    print("entry start\n");
+    print("start:\n");
+    $strings = array();
+    foreach($func->body as &$stmt) {
+        if ($stmt instanceof RetStmt) {
+            print("    mov rax, 60\n");
+            print("    mov rdi, {$stmt->expr}\n");
+            print("    syscall\n");
+        } else if ($stmt instanceof FuncallStmt) {
+            if ($stmt->name->value === "printf") {
+                $arity = count($stmt->args);
+                if ($arity !== 1) {
+                    print("{$stmt->name->loc->display()}: ERROR: expected 1 argument but got {$arity}\n");
+                    exit(69);
+                }
+
+                $format = $stmt->args[0];
+                $type = gettype($format);
+                if ($type !== "string") {
+                    print("{$stmt->name->loc->display()}: ERROR: expected string argument but got {$type}\n");
+                    exit(69);
+                }
+
+                $n = count($strings);
+                $m = strlen($format);
+                print("    mov rax, 1\n");
+                print("    mov rdi, 1\n");
+                print("    mov rsi, str_{$n}\n");
+                print("    mov rdx, {$m}\n");
+                print("    syscall\n");
+
+                array_push($strings, $format);
+            } else {
+                echo sprintf("%s: ERROR: unknown function %s\n", 
+                    $stmt->name->loc->display(),
+                    $stmt->name->value);
+                exit(69);
+            }
+        } else {
+            die("unreachable");
+        }
+    }
+
+    print("segment readable writable\n");
+    foreach($strings as $n => $string) {
+        print("str_{$n} db ");
+        $m = strlen($string);
+        for ($i = 0; $i < $m; ++$i) {
+            $c = ord($string[$i]);
+            if ($i > 0) print(",");
+            print("{$c}");
+        }
+        print("\n");
+    }
+}
+
+$platforms = array(
+    "python3", 
+    "fasm-x86_64-linux"
+);
+
+$program = array_shift($argv);
+$input = null;
+$platform = $platforms[0];
+
+while (sizeof($argv) > 0) {
+    $flag = array_shift($argv);
+    switch ($flag) {
+    case "-target": {
+        if (sizeof($argv) === 0) {
+            print("ERROR: no value was provided for flag $flag\n");
+            exit(69);
+        }
+
+        $arg = array_shift($argv);
+
+        if ($arg === "list") {
+            print("Available targets:\n");
+            foreach ($platforms as $p) {
+                print("    $p\n");
+            }
+            exit(69);
+        }
+
+        if (in_array($arg, $platforms)) {
+            $platform = $arg;
+        } else {
+            print("ERROR: unknown target $arg\n");
+            exit(69);
+        }
+    } break;
+    default: {
+        $input = $flag;
+    }
+    }
+}
+
+if ($input === null) {
     echo "ERROR: no input is provided\n";
     exit(69);
 }
 
-$file_path = $argv[1];
+$file_path = $input;
 $source = file_get_contents($file_path);
 if (!$source) exit(69);
 $lexer = new Lexer($file_path, $source);
 $func = parse_function($lexer);
 if (!$func) exit(69);
 
-function literal_to_py($value) {
-    if (is_string($value)) {
-        return "\"" . $value . "\"";
-    } else {
-        return (string)$value;
-    }
-}
+switch ($platform) {
+case "python3": {
+    generate_python3($func);
+} break;
 
-foreach($func->body as &$stmt) {
-    if ($stmt instanceof FuncallStmt) {
-        if ($stmt->name->value === "printf") {
-            $format = $stmt->args[0];
-            if (count($stmt->args) <= 1) {
-                if (php7_str_ends_with($format, "\\n")) {
-                    // Optimization: print("x") is faster than print("x\n", end="").
-                    $format_without_newline = substr($format, 0, strlen($format) - 2);
-                    echo sprintf("print(%s)\n", literal_to_py($format_without_newline));
-                } else {
-                    // Optimization: Don't invoke Python's % operator if it's unnecessary.
-                    echo sprintf("print(%s, end=\"\")\n", literal_to_py($format));
-                }
-            } else {
-                $substitutions = " % (";
-                foreach ($stmt->args as $i => $arg) {
-                    if ($i === 0) continue;  // Skip format string.
-                    $substitutions .= literal_to_py($arg) . ",";
-                }
-                $substitutions .= ")";
-                echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
-            }
-        } else {
-            echo sprintf("%s: ERROR: unknown function %s\n", 
-                $stmt->name->loc->display(),
-                $stmt->name->value);
-            exit(69);
-        }
-    }
+case "fasm-x86_64-linux": {
+    generate_fasm_x86_64_linux($func);
+} break;
+
+default: {
+    todo("unreachable");
+} break;
 }
