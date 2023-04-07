@@ -348,7 +348,7 @@ function parse_function($lexer) {
 function generate_python3($func) {
     function literal_to_py($value) {
         if (is_string($value)) {
-            return "\"" . $value . "\"";
+            return "\"" . str_replace("\n", "\\n", $value) . "\"";
         } else {
             return (string)$value;
         }
