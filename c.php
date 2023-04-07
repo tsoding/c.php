@@ -4,7 +4,7 @@ function todo($message) {
     throw new ErrorException("TODO: " . $message);
 }
 
-function php7_str_starts_with($haystack, $needle) 
+function php7_str_starts_with($haystack, $needle)
 {
     return strpos($haystack, $needle) === 0;
 }
@@ -184,7 +184,7 @@ class Lexer {
 
                 } break;
 
-                default: 
+                default:
                     $literal .= $ch;
                     $this->chop_char();
                 }
@@ -247,7 +247,7 @@ class Func {
 function expect_token($lexer, ...$types) {
     $token = $lexer->next_token();
     if (!$token) {
-        echo sprintf("%s: ERROR: expected %s but got end of file\n", 
+        echo sprintf("%s: ERROR: expected %s but got end of file\n",
             $lexer->loc()->display(), join(" or ", $types));
         return false;
     }
@@ -258,7 +258,7 @@ function expect_token($lexer, ...$types) {
         }
     }
 
-    echo sprintf("%s: ERROR: expected %s but got %s\n", 
+    echo sprintf("%s: ERROR: expected %s but got %s\n",
         $lexer->loc()->display(),
         join(" or ", $types),
         $token->type);
@@ -268,7 +268,7 @@ function expect_token($lexer, ...$types) {
 function parse_type($lexer) {
     $return_type = expect_token($lexer, TOKEN_NAME);
     if ($return_type->value !== "int") {
-        echo sprintf("%s: ERROR: unexpected type %s", 
+        echo sprintf("%s: ERROR: unexpected type %s",
             $return_type->loc->display(),
             $return_type->value);
         return false;
@@ -377,7 +377,7 @@ function generate_python3($func) {
                     echo sprintf("print(%s%s, end=\"\")\n", literal_to_py($format), $substitutions);
                 }
             } else {
-                echo sprintf("%s: ERROR: unknown function %s\n", 
+                echo sprintf("%s: ERROR: unknown function %s\n",
                     $stmt->name->loc->display(),
                     $stmt->name->value);
                 exit(69);
@@ -422,7 +422,7 @@ function generate_fasm_x86_64_linux($func) {
 
                 array_push($strings, $format);
             } else {
-                echo sprintf("%s: ERROR: unknown function %s\n", 
+                echo sprintf("%s: ERROR: unknown function %s\n",
                     $stmt->name->loc->display(),
                     $stmt->name->value);
                 exit(69);
@@ -445,69 +445,65 @@ function generate_fasm_x86_64_linux($func) {
     }
 }
 
-$platforms = array(
-    "python3", 
-    "fasm-x86_64-linux"
-);
+function main($argv) {
+    $platforms = array(
+        "python3",
+        "fasm-x86_64-linux"
+    );
 
-$program = array_shift($argv);
-$input = null;
-$platform = $platforms[0];
+    $program = array_shift($argv);
+    $input = null;
+    $platform = $platforms[0];
 
-while (sizeof($argv) > 0) {
-    $flag = array_shift($argv);
-    switch ($flag) {
-    case "-target": {
-        if (sizeof($argv) === 0) {
-            print("ERROR: no value was provided for flag $flag\n");
-            exit(69);
-        }
-
-        $arg = array_shift($argv);
-
-        if ($arg === "list") {
-            print("Available targets:\n");
-            foreach ($platforms as $p) {
-                print("    $p\n");
+    while (sizeof($argv) > 0) {
+        $flag = array_shift($argv);
+        switch ($flag) {
+        case "-target": {
+            if (sizeof($argv) === 0) {
+                print("ERROR: no value was provided for flag $flag\n");
+                exit(69);
             }
-            exit(69);
+
+            $arg = array_shift($argv);
+
+            if ($arg === "list") {
+                print("Available targets:\n");
+                foreach ($platforms as $p) {
+                    print("    $p\n");
+                }
+                exit(69);
+            }
+
+            if (in_array($arg, $platforms)) {
+                $platform = $arg;
+            } else {
+                print("ERROR: unknown target $arg\n");
+                exit(69);
+            }
+        } break;
+        default: {
+            $input = $flag;
         }
-
-        if (in_array($arg, $platforms)) {
-            $platform = $arg;
-        } else {
-            print("ERROR: unknown target $arg\n");
-            exit(69);
         }
-    } break;
-    default: {
-        $input = $flag;
     }
+
+    if ($input === null) {
+        echo "ERROR: no input is provided\n";
+        exit(69);
+    }
+
+    $file_path = $input;
+    $source = file_get_contents($file_path);
+    if (!$source) exit(69);
+    $lexer = new Lexer($file_path, $source);
+    $func = parse_function($lexer);
+    if (!$func) exit(69);
+
+    switch ($platform) {
+    case "python3": generate_python3($func); break;
+    case "fasm-x86_64-linux": generate_fasm_x86_64_linux($func); break;
+    default: todo("unreachable"); break;
     }
 }
 
-if ($input === null) {
-    echo "ERROR: no input is provided\n";
-    exit(69);
-}
-
-$file_path = $input;
-$source = file_get_contents($file_path);
-if (!$source) exit(69);
-$lexer = new Lexer($file_path, $source);
-$func = parse_function($lexer);
-if (!$func) exit(69);
-
-switch ($platform) {
-case "python3": {
-    generate_python3($func);
-} break;
-
-case "fasm-x86_64-linux": {
-    generate_fasm_x86_64_linux($func);
-} break;
-
-default: {
-    todo("unreachable");
-} break;
-}
+main($argv);
