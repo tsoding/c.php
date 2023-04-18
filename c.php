@@ -445,6 +445,13 @@ function generate_fasm_x86_64_linux($func) {
     }
 }
 
+function usage($program) {
+    print("Usage: php $program [OPTIONS] <input.c>\n");
+    print("OPTIONS:\n");
+    print("    -target <target>    Compilation target. Provide `list` to get the list of targets. (default: python3)\n");
+    print("    -help               Print this message\n");
+}
+
 function main($argv) {
     $platforms = array(
         "python3",
@@ -458,8 +465,14 @@ function main($argv) {
     while (sizeof($argv) > 0) {
         $flag = array_shift($argv);
         switch ($flag) {
+        case "-help": {
+            usage($program);
+            exit(0);
+        } break;
+
         case "-target": {
             if (sizeof($argv) === 0) {
+                usage($program);
                 print("ERROR: no value was provided for flag $flag\n");
                 exit(69);
             }
@@ -477,18 +490,20 @@ function main($argv) {
             if (in_array($arg, $platforms)) {
                 $platform = $arg;
             } else {
+                usage($program);
                 print("ERROR: unknown target $arg\n");
                 exit(69);
             }
         } break;
-        default: {
+
+        default:
             $input = $flag;
-        }
         }
     }
 
     if ($input === null) {
-        echo "ERROR: no input is provided\n";
+        usage($program);
+        print("ERROR: no input is provided\n");
         exit(69);
     }
 
